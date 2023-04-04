@@ -1,4 +1,6 @@
-package exif
+//go:build ignore
+
+package main
 
 import (
 	"bufio"
@@ -9,7 +11,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"testing"
 )
 
 // Tag ID	Tag Name	Writable	Group	Values / Notes
@@ -17,7 +18,7 @@ import (
 //go:embed exif.txt
 var txt []byte
 
-func TestTags(t *testing.T) {
+func main() {
 	fp, _ := os.Create("tagdefinitions.go")
 	scn := bufio.NewScanner(bytes.NewReader(txt))
 	var tags []TagPreproces
@@ -85,10 +86,10 @@ var tags = map[uint16]tagdef{
 
 func parseType(s string) (tp Type, flags flags, arrayLen [2]int) {
 	if s == "-" || len(s) == 0 {
-		return typeIgnore, 0, arrayLen
+		return 0, 0, arrayLen
 	}
 	if s == "no" {
-		return TypeUndef, 0, arrayLen
+		return 0, 0, arrayLen
 	}
 	unsafe := strings.ContainsRune(s, '!')
 	protected := strings.ContainsRune(s, '*')
@@ -124,18 +125,17 @@ func parseType(s string) (tp Type, flags flags, arrayLen [2]int) {
 	if isSigned || typeString[len(typeString)-1] == 'u' {
 		typeString = typeString[:len(typeString)-1]
 	}
-	signedAdd := Type(b2u8(isSigned))
+	signedAdd := Type(b2u8(isSigned)) * 5
 	switch typeString {
 	case "undef":
-		tp = TypeUndef
+		tp = TypeUndefined
 	case "int16":
-		tp = TypeUint16 + signedAdd
+		tp = TypeUint16
 	case "int32":
 		tp = TypeUint32 + signedAdd
 	case "int8":
 		tp = TypeUint8 + signedAdd
 	case "double":
-
 		tp = TypeFloat64
 	case "float":
 		tp = TypeFloat32
