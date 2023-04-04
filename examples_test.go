@@ -9,7 +9,7 @@ import (
 )
 
 func ExampleLazyTiff() {
-	fp, err := os.Open("testdata/sample1.tif")
+	fp, err := os.Open("testdata/sample1.tiff")
 	if err != nil {
 		panic(err)
 	}
