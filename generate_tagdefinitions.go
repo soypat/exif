@@ -1,6 +1,6 @@
 //go:build ignore
 
-package main
+package exif
 
 import (
 	"bufio"
@@ -18,7 +18,7 @@ import (
 //go:embed exif.txt
 var txt []byte
 
-func main() {
+func ExampleGeneration() {
 	fp, _ := os.Create("tagdefinitions.go")
 	scn := bufio.NewScanner(bytes.NewReader(txt))
 	var tags []TagPreproces
@@ -82,9 +82,12 @@ var tags = map[uint16]tagdef{
 		// fmt.Fprintf(fp, "\t%+v %d %d\n", tag.Writable, tp, flag)
 	}
 	fmt.Fprint(fp, "}\n")
+	// Output:
+	// None.
 }
 
 func parseType(s string) (tp Type, flags flags, arrayLen [2]int) {
+	arrayLen = arrayLenInvalid // default value is -1, -1.
 	if s == "-" || len(s) == 0 {
 		return 0, 0, arrayLen
 	}
@@ -99,25 +102,25 @@ func parseType(s string) (tp Type, flags flags, arrayLen [2]int) {
 
 	flagCount := b2u8(unsafe) + b2u8(avoid) + b2u8(mandatory) + b2u8(writeConstrained) + b2u8(protected)
 	typeString := s[:len(s)-int(flagCount)]
-	var arrayLength = 1
-	var arrayLength2 = -1
+	var arrayLengthMin = -1
+	var arrayLengthMax = 1
 	arrayStart := strings.IndexByte(s, '[')
 	if arrayStart > 0 {
 		lenString := s[arrayStart+1 : strings.IndexByte(s, ']')]
 		dotIdx := strings.IndexByte(lenString, '.')
 		if dotIdx >= 0 {
 			lenString = lenString[dotIdx+1:]
-			arrayLength2 = 0
+			arrayLengthMin = 0
 		}
 
 		if lenString == "n" {
-			arrayLength = 0 // undefined length
+			arrayLengthMax = 0 // undefined length
 		} else {
 			v, err := strconv.Atoi(lenString)
-			if err != nil {
+			if err != nil || v == 0 {
 				panic(fmt.Sprintf("unknwon type string %q from parsed %q: %s", typeString, s, err))
 			}
-			arrayLength = v
+			arrayLengthMin = v
 		}
 		typeString = typeString[:arrayStart]
 	}
@@ -147,7 +150,7 @@ func parseType(s string) (tp Type, flags flags, arrayLen [2]int) {
 		panic(fmt.Sprintf("unknwon type string %q from parsed %q", typeString, s))
 	}
 	return tp, newflags(unsafe, protected, avoid, writeConstrained, mandatory),
-		[2]int{arrayLength, arrayLength2}
+		[2]int{arrayLengthMin, arrayLengthMax}
 }
 
 type TagPreproces struct {

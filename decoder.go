@@ -1,4 +1,4 @@
-package tiff
+package exif
 
 import (
 	"encoding/binary"
@@ -7,48 +7,78 @@ import (
 	"io"
 	"strconv"
 	"unsafe"
-
-	"github.com/soypat/exif"
 )
 
-type TiffLazy struct {
+type LazyDecoder struct {
 	dirs       []lazydir
 	order      binary.ByteOrder
 	baseOffset int64
 }
 
-func (lt *TiffLazy) MakeTags(r io.ReaderAt, f func(_ exif.IFD, id exif.ID) bool) ([]exif.Tag, error) {
-	r = &offsetReaderAt{r: r, offset: lt.baseOffset}
-	var tags []exif.Tag
+// MakeIFDs processes the collected tags in the LazyDecoder (obtained from a previous call to Decode)
+// and creates the corresponding EXIF tags.
+// If a nil reader is passed into MakeIFDs then only the tags which have a
+// lazy in-memory representation will be returned.
+func (lt *LazyDecoder) MakeIFDs(r io.ReaderAt, fn func(_ IFD, id ID) bool) ([]IFD, error) {
+	if fn == nil {
+		return nil, errors.New("nil callback")
+	}
+	if r != nil {
+		r = &offsetReaderAt{r: r, offset: lt.baseOffset}
+	}
+	var ifds []IFD
 	for _, dir := range lt.dirs {
+		var tags []Tag
 		for _, tag := range dir.Tags {
-			if tag.length != 0 || !f(exif.IFD{}, tag.ID) {
+			if !fn(IFD{}, tag.ID) {
 				continue // skip tag.
 			}
-			sz := tag.Type.Size()
-			v, err := exif.EvaluateData(tag.Type, lt.order, tag.arrayptr()[:sz])
-			if err != nil {
-				return nil, err
+
+			if dataOffset := tag.dataOffset(); dataOffset != 0 {
+				if r == nil {
+					continue // Nil reader means no way to read from file.
+				}
+				// 8bit values or variable length value are stored at an offset position.
+				data := make([]byte, tag.length)
+				n, err := r.ReadAt(data, int64(dataOffset))
+				if err != nil {
+					return ifds, fmt.Errorf("reading %d/%d exif data at %#x: %w", n, tag.length, dataOffset, err)
+				}
+				if n != int(tag.length) {
+					return ifds, errors.New("incomplete read")
+				}
+				v, err := DecodeTypeData(tag.ID.Type(), lt.order, data)
+				if err != nil {
+					return ifds, err
+				}
+				tags = append(tags, Tag{ID: tag.ID, data: v})
+
+			} else {
+				// 1, 2 or 4 bit length values, stored in place.
+				sz := tag.Type.Size()
+				v, err := DecodeTypeData(tag.Type, lt.order, tag.arrayptr()[:sz])
+				if err != nil {
+					return ifds, err
+				}
+				tags = append(tags, Tag{ID: tag.ID, data: v})
 			}
-			newtag, err := exif.NewTag(tag.ID, v)
-			if err != nil && newtag.Value() == nil {
-				continue // bad data
-			}
-			tags = append(tags, newtag)
 		}
+		ifds = append(ifds, IFD{Tags: tags})
 	}
-	return tags, nil
+	return ifds, nil
 }
 
-func LazyDecode(r io.ReaderAt) (lt *TiffLazy, err error) {
-	lt = new(TiffLazy)
+// Decode marshals exif data in r lazily. It only stores values that have a
+// constrained in-memory representation.
+func (lt *LazyDecoder) Decode(r io.ReaderAt) (err error) {
+	*lt = LazyDecoder{}
 	var buf [8]byte
 	n, err := r.ReadAt(buf[:], 0)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if n != len(buf) {
-		return nil, errors.New("wanted to read 10 starting bytes, only read " + strconv.Itoa(n))
+		return errors.New("wanted to read 10 starting bytes, only read " + strconv.Itoa(n))
 	}
 	start := string(buf[:2])
 	if start == "\xff\xd8" {
@@ -64,28 +94,28 @@ func LazyDecode(r io.ReaderAt) (lt *TiffLazy, err error) {
 	case "MM":
 		order = binary.BigEndian
 	default:
-		return nil, errors.New("failed reading TIFF byte order")
+		return errors.New("failed reading EXIF byte order")
 	}
 	lt.order = order
 	//
 	specialMarker := order.Uint16(buf[2:])
 	if specialMarker != 42 {
-		return nil, errors.New("failed to find special marker")
+		return errors.New("failed to find special marker")
 	}
 	// read offset to first IFD and load them.
 	offset := int64(order.Uint32(buf[4:]))
 	for offset != 0 {
 		d, next, err := decodeDir(r, offset, order)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if next == offset {
-			return nil, errors.New("recursive dir")
+			return errors.New("recursive dir")
 		}
 		offset = next
 		lt.dirs = append(lt.dirs, d)
 	}
-	return lt, nil
+	return nil
 }
 
 type lazydir struct {
@@ -133,10 +163,17 @@ func decodeDir(r io.ReaderAt, offset int64, order binary.ByteOrder) (d lazydir, 
 }
 
 type lazytag struct {
-	ID            exif.ID
-	Type          exif.Type
+	ID            ID
+	Type          Type
 	offsetOrValue uint32
 	length        uint32
+}
+
+func (lt *lazytag) dataOffset() uint32 {
+	if lt.length == 0 {
+		return 0 // No data, only value.
+	}
+	return lt.offsetOrValue
 }
 
 func (lt *lazytag) arrayptr() *[4]byte {
@@ -152,8 +189,8 @@ func decodeTag(r io.ReaderAt, offset int64, order binary.ByteOrder) (tg lazytag,
 	if n != len(buf) {
 		return tg, errors.New("reading tag got short read (" + strconv.Itoa(n) + ")")
 	}
-	tg.ID = exif.ID(order.Uint16(buf[0:]))
-	tg.Type = exif.Type(order.Uint16(buf[2:]))
+	tg.ID = ID(order.Uint16(buf[0:]))
+	tg.Type = Type(order.Uint16(buf[2:]))
 	// if tg.ID.Type() != tg.Type {
 	//   err = fmt.Errorf("type mismatch for tag ID %q(%#x), got %s, expected %s", tg.ID.String(), uint16(tg.ID), tg.Type.String(), tg.ID.Type().String())
 	// }

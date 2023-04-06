@@ -9,60 +9,60 @@ import (
 	"github.com/soypat/exif/rational"
 )
 
-//go:generate go run generate_tagdefinitions.go
+//go:generate go run generate_tagdefinitions.go exif.go
 
-// TODO
-type IFD struct{}
+// IFD or Image File Directory
+type IFD struct {
+	Tags []Tag
+}
 
+// Tag represents an EXIF field and the contained data in the field.
 type Tag struct {
 	ID   ID
 	data any
 }
 
+// String returns a human readable representation of the tag and its value.
 func (t Tag) String() string {
 	return fmt.Sprintf("%s (%s): %v", t.ID.String(), t.ID.Type().String(), t.Value())
 }
 
+// Value returns the value contained in the tag. An uninitialized tag will return nil.
 func (t Tag) Value() any {
 	return t.data
 }
 
+// NewTag creates a new tag with the underlying value.
+// It returns an error if the resulting tag would be malformed.
+// i.e: mismatched type between value and what would be expected with tag's ID.
 func NewTag(id ID, value any) (_ Tag, err error) {
 	inputValueType := Type(0)
-	switch value.(type) {
-	case uint8:
-		inputValueType = TypeUint8
-	case uint16:
-		inputValueType = TypeUint16
-	case uint32:
-		inputValueType = TypeUint32
-	case int8:
-		inputValueType = TypeInt8
-	case int16:
-		inputValueType = TypeInt16
-	case int32:
+	v, err := toInt(value)
+	if err == nil {
 		inputValueType = TypeInt32
-	case float32:
-		inputValueType = TypeFloat32
-	case float64:
+		value = v
+	}
+	if v, ok := value.(float32); ok {
 		inputValueType = TypeFloat64
-	case string:
-		inputValueType = TypeString
-	default:
-		return Tag{}, fmt.Errorf("unhandled type %T", value)
+		value = float64(v)
 	}
-	if inputValueType != id.Type() {
-		//
-		err = fmt.Errorf("mismatch between value type %s and %q type %s", inputValueType.String(), id.String(), id.Type().String())
+	idTp := id.Type()
+	if inputValueType.IsInt() != idTp.IsInt() ||
+		inputValueType.IsFloat() != idTp.IsFloat() {
+		return Tag{}, fmt.Errorf("mismatch between value type %s and %q type %s", inputValueType.String(), id.String(), id.Type().String())
 	}
-	return Tag{ID: id, data: value}, err
+
+	return Tag{ID: id, data: value}, nil
 }
 
+// Type is the set of all types one may encounter when parsing EXIF data.
 type Type uint16
 
 const (
 	_ = iota
+	// TypeUint8 can be found as Byte type in EXIF spec.
 	TypeUint8
+	// TypeString a.k.a. ASCII.
 	TypeString
 	TypeUint16
 	TypeUint32
@@ -73,9 +73,11 @@ const (
 	TypeInt32
 	TypeRational64
 	TypeFloat32
+	// TypeFloat64 can be found as the double type in EXIF spec.
 	TypeFloat64
 )
 
+// Group represents the IDF group.
 type Group uint8
 
 const (
@@ -86,6 +88,7 @@ const (
 	GroupSubIFD
 )
 
+// Size returns the size in bytes of the type. Can be 1, 2, 4, or 8 for valid types. 0 otherwise.
 func (tp Type) Size() (s uint8) {
 	switch tp {
 	case TypeInt8, TypeUint8, TypeString, TypeUndefined:
@@ -97,11 +100,12 @@ func (tp Type) Size() (s uint8) {
 	case TypeRational64, TypeFloat64, TypeURational64:
 		s = 8
 	default:
-		s = 0 // Default value will be 0.
+		s = 0 // Invalid type.
 	}
 	return s
 }
 
+// String returns a Go-like representation of the type.
 func (tp Type) String() (s string) {
 	switch tp {
 	case TypeUint8:
@@ -136,20 +140,29 @@ func (tp Type) String() (s string) {
 
 type ID uint16
 
+// String returns a camel case human readable representation of the ID.
 func (id ID) String() string {
 	return tags[uint16(id)].Name
 }
 
+// Type returns the type of data the ID field would contain.
 func (id ID) Type() Type {
 	return tags[uint16(id)].Type
 }
 
+// Group returns the IFD group the id belongs to.
 func (id ID) Group() Group {
 	return tags[uint16(id)].Group
 }
 
+// IsMandatory returns true if the tag is specified as mandatory in the EXIF spec.
 func (id ID) IsMandatory() bool {
 	return tags[uint16(id)].flags.IsMandatory()
+}
+
+// IsStaticSize returns true if the ids data array size is of constrained length/size.
+func (id ID) IsStaticSize() bool {
+	return tags[uint16(id)].arrayLen[1] != 0
 }
 
 type tagdef struct {
@@ -181,7 +194,18 @@ func b2u8(b bool) uint8 {
 	return 0
 }
 
-func EvaluateData(tp Type, order binary.ByteOrder, data []byte) (v any, err error) {
+// DecodeTypeData takes raw EXIF byte slice data and interprets it according to
+// the Type tp and the byte order. It returns an empty interface containing the
+// interpreted value if err is nil. This function should be used for tags of
+// constrained length.
+// It may return any of the following types:
+//   - int64 for integers.
+//   - float64 for floats.
+//   - rational.U64 for unsigned rational numbers.
+//   - rational.I64 for signed rational numbers.
+//   - []byte for undefined type (identical to input data).
+//   - string for String (ASCII) type which is just string(data).
+func DecodeTypeData(tp Type, order binary.ByteOrder, data []byte) (v any, err error) {
 	sz := tp.Size()
 	if sz == 0 {
 		return nil, errors.New("invalid type")
@@ -200,19 +224,19 @@ func EvaluateData(tp Type, order binary.ByteOrder, data []byte) (v any, err erro
 	}
 	switch tp {
 	case TypeUint8:
-		v = data[0]
+		v = int64(data[0])
 	case TypeUint16:
-		v = order.Uint16(data[:2])
+		v = int64(order.Uint16(data[:2]))
 	case TypeUint32:
-		v = order.Uint32(data[:4])
+		v = int64(order.Uint32(data[:4]))
 	case TypeInt8:
-		v = int8(data[0])
+		v = int64(int8(data[0]))
 	case TypeInt16:
-		v = int16(order.Uint16(data[:2]))
+		v = int64(int16(order.Uint16(data[:2])))
 	case TypeInt32:
-		v = int32(order.Uint32(data[:4]))
+		v = int64(int32(order.Uint32(data[:4])))
 	case TypeFloat32:
-		v = math.Float32frombits(order.Uint32(data[:4]))
+		v = float64(math.Float32frombits(order.Uint32(data[:4])))
 	case TypeFloat64:
 		v = math.Float64frombits(order.Uint64(data[:8]))
 	case TypeRational64:
@@ -224,3 +248,96 @@ func EvaluateData(tp Type, order binary.ByteOrder, data []byte) (v any, err erro
 	}
 	return v, err
 }
+
+// IsInt returns true if tp is a signed or unsigned integer type.
+func (tp Type) IsInt() bool {
+	return tp == TypeInt8 || tp == TypeInt16 || tp == TypeInt32 ||
+		tp == TypeUint8 || tp == TypeUint16 || tp == TypeUint32
+}
+
+// IsFloat returns true if tp is of float32 (single) or float64 (double) type.
+func (tp Type) IsFloat() bool {
+	return tp == TypeFloat32 || tp == TypeFloat64
+}
+
+// Int returns the integer value contained in the tag if the value is of integer type.
+// This function returns an error if the ID of the tag does not match a integer type
+// (signed or unsigned) or if the type contained is not a integer type.
+func (tag Tag) Int() (int64, error) {
+	if !tag.ID.Type().IsInt() {
+		return 0, errors.New("exif ID is not of integer type")
+	}
+	if tag.data == nil {
+		return 0, errors.New("nil tag value")
+	}
+	v, ok := tag.data.(int64)
+	if ok {
+		return v, nil
+	}
+	v, err := toInt(tag.data)
+	if err == nil {
+		return v, nil
+	}
+	return 0, fmt.Errorf("tag did not contain integer type %T (%s)", tag.data, err)
+
+}
+
+// Float returns the float32 or float64 value contained in the tag if the value is of float type.
+// This function returns an error if the ID of the tag does not match a float type or if the type
+// contained is not a float type.
+func (tag Tag) Float() (float64, error) {
+	if !tag.ID.Type().IsFloat() {
+		return 0, errors.New("exif ID is not of float type")
+	}
+	if tag.data == nil {
+		return 0, errors.New("nil tag value")
+	}
+	v, ok := tag.data.(float64)
+	if ok {
+		return v, nil
+	}
+	v32, ok := tag.data.(float32)
+	if ok {
+		return float64(v32), nil
+	}
+	return 0, fmt.Errorf("tag did not contain float type: %T", tag.data)
+}
+
+func toInt(v any) (ret int64, _ error) {
+	switch c := v.(type) {
+	case int8:
+		ret = int64(c)
+	case int16:
+		ret = int64(c)
+	case int32:
+		ret = int64(c)
+	case uint8:
+		ret = int64(c)
+	case uint16:
+		ret = int64(c)
+	case uint32:
+		ret = int64(c)
+	case int64:
+		ret = c
+	case int:
+		ret = int64(c)
+	case uint:
+		if c > math.MaxInt64 {
+			return 0, errors.New("uint overflows int64")
+		}
+		ret = int64(c)
+	case uint64:
+		if c > math.MaxInt64 {
+			return 0, errors.New("uint64 overflows int64")
+		}
+		ret = int64(c)
+	default:
+		return 0, errors.New("value is not of integer type")
+	}
+	return ret, nil
+}
+
+// tag file generation flags.
+var (
+	arrayLenInvalid = [2]int{-1, -1}
+)

@@ -7,7 +7,6 @@ import (
 	dsoprea "github.com/dsoprea/go-exif/v3"
 	exifcommon "github.com/dsoprea/go-exif/v3/common"
 	"github.com/soypat/exif"
-	"github.com/soypat/exif/tiff"
 )
 
 const (
@@ -20,12 +19,13 @@ func BenchmarkThisPackage_SmallImage(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
+	var decoder exif.LazyDecoder
 	for i := 0; i < b.N; i++ {
-		lazytiff, err := tiff.LazyDecode(fp)
+		err := decoder.Decode(fp)
 		if err != nil {
 			b.Fatal(err)
 		}
-		_, err = lazytiff.MakeTags(fp, func(_ exif.IFD, id exif.ID) bool {
+		_, err = decoder.MakeIFDs(fp, func(_ exif.IFD, id exif.ID) bool {
 			return true
 		})
 		if err != nil {
