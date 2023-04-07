@@ -28,7 +28,7 @@ func (lt *LazyDecoder) MakeIFDs(r io.ReaderAt, fn func(ifd, size int, id ID) boo
 		return nil, errors.New("nil callback")
 	}
 	if r != nil {
-		r = &offsetReaderAt{r: r, offset: lt.baseOffset}
+		r = newOffsetReaderAt(r, lt.baseOffset, nil)
 	}
 	var ifds []IFD
 	for ifd, dir := range lt.dirs {
@@ -118,7 +118,7 @@ func (lt *LazyDecoder) Decode(r io.ReaderAt) (err error) {
 		// start of image found.
 		copy(lt.app1Size[:2], buf[4:])
 		r.ReadAt(buf[:], 12)
-		r = &offsetReaderAt{r: r, offset: 12}
+		r = newOffsetReaderAt(r, 12, nil)
 		lt.baseOffset = 12
 	}
 	var order binary.ByteOrder
@@ -193,15 +193,6 @@ func (e *LazyDecoder) EndOfApp1() int64 {
 type lazydir struct {
 	Tags  []lazytag
 	Group Group
-}
-
-type offsetReaderAt struct {
-	r      io.ReaderAt
-	offset int64
-}
-
-func (or *offsetReaderAt) ReadAt(p []byte, off int64) (n int, err error) {
-	return or.r.ReadAt(p, off+or.offset)
 }
 
 func decodeDir(r io.ReaderAt, offset int64, order binary.ByteOrder) (d lazydir, nextOffset int64, err error) {
@@ -295,4 +286,61 @@ func decodeTag(r io.ReaderAt, offset int64, order binary.ByteOrder) (tg lazytag,
 		_ = arr // Place breakpoints for debugging.
 	}
 	return tg, nil
+}
+
+type offsetReaderAt struct {
+	r         io.ReaderAt
+	offset    int64
+	buf       []byte
+	bufOffset int64
+}
+
+var (
+	CSAVE int
+	CMISS int
+)
+
+func (or *offsetReaderAt) ReadAt(p []byte, off int64) (n int, err error) {
+	off += or.offset // Work in underlying reader coordinates from here on out.
+	if len(p) < len(or.buf) {
+		// Only perform fast in-memory copy for buffers smaller than underlying buffer.
+		end := off + int64(len(p))
+		bufStart, bufEnd := or.buflims()
+		if off >= bufStart && end <= bufEnd {
+			start := off - bufStart
+			n := copy(p, or.buf[start:start+int64(len(p))])
+			CSAVE++
+			return n, nil
+		}
+		CMISS++
+		// If we miss the buffer then we reload file contents into memory.
+		nn, err := or.r.ReadAt(or.buf[:cap(or.buf)], off)
+		if err != nil && nn < len(p) {
+			return nn, err // Read less than capacity of p.
+		}
+		or.buf = or.buf[:nn]
+		or.bufOffset = off
+		return copy(p, or.buf[:len(p)]), nil
+	}
+	return or.r.ReadAt(p, off)
+}
+
+func newOffsetReaderAt(r io.ReaderAt, baseOffset int64, buf []byte) *offsetReaderAt {
+	const bufSize = 64
+	if buf == nil {
+		buf = make([]byte, bufSize)
+	}
+	return &offsetReaderAt{
+		r:         r,
+		buf:       buf,
+		bufOffset: -1,
+		offset:    baseOffset,
+	}
+}
+
+func (or *offsetReaderAt) buflims() (start, end int64) {
+	if or.bufOffset < 0 {
+		return 0, 0
+	}
+	return or.bufOffset, or.bufOffset + int64(len(or.buf))
 }
