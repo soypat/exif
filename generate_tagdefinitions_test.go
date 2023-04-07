@@ -1,5 +1,3 @@
-//go:build ignore
-
 package exif
 
 import (
@@ -187,15 +185,20 @@ const (
 `)
 	var tagslice tagdefs
 	written := make(map[string]struct{})
+	maxLen := 0
 	for _, tag := range tags {
 		if _, ok := written[tag.Name]; !ok && !strings.ContainsAny(tag.Name, "-?") {
 			written[tag.Name] = struct{}{}
 			tagslice = append(tagslice, tag)
+			if len(tag.Name) > maxLen {
+				maxLen = len(tag.Name)
+			}
 		}
 	}
 	sort.Sort(tagslice)
+	fmtString := "\t%-" + strconv.Itoa(maxLen) + "s exif.ID = %0#4x\n"
 	for _, tag := range tagslice {
-		fmt.Fprintf(fp, "\t%s exif.ID = %0#4x\n", tag.Name, uint16(tag.ID))
+		fmt.Fprintf(fp, fmtString, tag.Name, uint16(tag.ID))
 		written[tag.Name] = struct{}{}
 	}
 	fp.WriteString(")\n")

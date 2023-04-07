@@ -6,6 +6,11 @@ import (
 	"strconv"
 )
 
+// Rational is implemented by rational numbers in this package.
+type Rational interface {
+	Fraction() (numerator, denominator int)
+}
+
 var (
 	errZeroDenominator = errors.New("zero denominator")
 	errShortBuf        = errors.New("buffer too short")
@@ -67,12 +72,12 @@ func DecodeI64(order binary.ByteOrder, b []byte) (I64, error) {
 	return I64{denMinusOne: denominator - 1, num: numerator}, nil
 }
 
-func (i I64) Fraction() (numerator, denominator int32) {
-	return i.num, i.denMinusOne + 1
+func (i I64) Fraction() (numerator, denominator int) {
+	return int(i.num), int(i.denMinusOne + 1)
 }
 
-func (i U64) Fraction() (numerator, denominator uint32) {
-	return i.num, i.denMinusOne + 1
+func (i U64) Fraction() (numerator, denominator int) {
+	return int(i.num), int(i.denMinusOne + 1)
 }
 
 func (i I64) String() string {

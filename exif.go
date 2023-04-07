@@ -284,6 +284,11 @@ func (tp Type) IsFloat() bool {
 	return tp == TypeFloat32 || tp == TypeFloat64
 }
 
+// IsRational returns true if tp is of unsigned or signed rational type.
+func (tp Type) IsRational() bool {
+	return tp == TypeRational64 || tp == TypeURational64
+}
+
 // Int returns the integer value contained in the tag if the value is of integer type.
 // This function returns an error if the ID of the tag does not match a integer type
 // (signed or unsigned) or if the type contained is not a integer type.
@@ -325,6 +330,24 @@ func (tag Tag) Float() (float64, error) {
 		return float64(v32), nil
 	}
 	return 0, fmt.Errorf("tag did not contain float type: %T", tag.data)
+}
+
+// Rational returns the underlying rational number contained in the tag if
+// the value implements the [rational.Rational] interface.
+// This function returns an error if the ID of the tag does not match a rational
+// type or if the type contained does not implement the rational.Rational interface.
+func (tag Tag) Rational() (rational.Rational, error) {
+	if !tag.ID.Type().IsRational() {
+		return nil, errors.New("exif ID is not of rational type")
+	}
+	if tag.data == nil {
+		return nil, errors.New("nil tag value")
+	}
+	v, ok := tag.data.(rational.Rational)
+	if !ok {
+		return nil, fmt.Errorf("tag did not contain a rational type: %T", tag.data)
+	}
+	return v, nil
 }
 
 func toInt(v any) (ret int64, _ error) {
