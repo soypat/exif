@@ -1,3 +1,5 @@
+//go:build generate
+
 package exif
 
 import (
@@ -184,20 +186,30 @@ import "github.com/soypat/exif"
 const (
 `)
 	var tagslice tagdefs
+
+	for _, tag := range tags {
+		if !strings.ContainsAny(tag.Name, "-?") {
+			tagslice = append(tagslice, tag)
+		}
+	}
+	// Sort for consistent results.
+	sort.Sort(tagslice)
+	// Delete duplicated entries
 	written := make(map[string]struct{})
 	maxLen := 0
-	for _, tag := range tags {
-		if _, ok := written[tag.Name]; !ok && !strings.ContainsAny(tag.Name, "-?") {
+	var uniqTagSlice []tagdef
+	for _, tag := range tagslice {
+		_, ok := written[tag.Name]
+		if !ok {
+			uniqTagSlice = append(uniqTagSlice, tag)
 			written[tag.Name] = struct{}{}
-			tagslice = append(tagslice, tag)
 			if len(tag.Name) > maxLen {
 				maxLen = len(tag.Name)
 			}
 		}
 	}
-	sort.Sort(tagslice)
 	fmtString := "\t%-" + strconv.Itoa(maxLen) + "s exif.ID = %0#4x\n"
-	for _, tag := range tagslice {
+	for _, tag := range uniqTagSlice {
 		fmt.Fprintf(fp, fmtString, tag.Name, uint16(tag.ID))
 		written[tag.Name] = struct{}{}
 	}

@@ -9,7 +9,7 @@ import (
 	"github.com/soypat/exif/rational"
 )
 
-//go:generate go test generate_tagdefinitions.go exif.go tagdefinitions.go
+//go:generate go test -tags=generate .
 
 // IFD or Image File Directory
 type IFD struct {

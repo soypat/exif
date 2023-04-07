@@ -33,44 +33,72 @@ func (lt *LazyDecoder) MakeIFDs(r io.ReaderAt, fn func(ifd, size int, id ID) boo
 	var ifds []IFD
 	for ifd, dir := range lt.dirs {
 		var tags []Tag
-		for _, tag := range dir.Tags {
-			sz := tag.size()
-			if r == nil && tag.dataOffset() != 0 {
+		for _, lztag := range dir.Tags {
+			sz := lztag.size()
+			if r == nil && lztag.dataOffset() != 0 {
 				continue // Nil reader means no way to read from file.
 			}
-			if !fn(ifd, sz, tag.ID) {
+			if !fn(ifd, sz, lztag.ID) {
 				continue // User decides to skip tag.
 			}
-
-			if dataOffset := tag.dataOffset(); dataOffset != 0 {
-				// 8-byte values or variable length value are stored at an offset position.
-				data := make([]byte, tag.length)
-				n, err := r.ReadAt(data, int64(dataOffset))
-				if err != nil {
-					return ifds, fmt.Errorf("reading %d/%d exif data at %#x: %w", n, tag.length, dataOffset, err)
-				}
-				if n != int(tag.length) {
-					return ifds, errors.New("incomplete read")
-				}
-				v, err := DecodeTypeData(tag.ID.Type(), lt.order, data)
-				if err != nil {
-					return ifds, err
-				}
-				tags = append(tags, Tag{ID: tag.ID, data: v})
-
-			} else {
-				// 1, 2 or 4 byte length values, stored in place.
-				sz := tag.Type.Size()
-				v, err := DecodeTypeData(tag.Type, lt.order, tag.arrayptr()[:sz])
-				if err != nil {
-					return ifds, err
-				}
-				tags = append(tags, Tag{ID: tag.ID, data: v})
+			tag, err := lt.getTag(r, lztag)
+			if err != nil {
+				// Return correctly generated tags up to the point of failure.
+				return append(ifds, IFD{Tags: tags, Group: dir.Group}), err
 			}
+			tags = append(tags, tag)
 		}
 		ifds = append(ifds, IFD{Tags: tags, Group: dir.Group})
 	}
 	return ifds, nil
+}
+
+func (lt *LazyDecoder) getTag(r io.ReaderAt, ltag lazytag) (tag Tag, err error) {
+	if dataOffset := ltag.dataOffset(); dataOffset != 0 {
+		// 8-byte values or variable length value are stored at an offset position.
+		data := make([]byte, ltag.length)
+		n, err := r.ReadAt(data, int64(dataOffset))
+		if err != nil {
+			return Tag{}, fmt.Errorf("reading %d/%d exif data at %#x: %w", n, ltag.length, dataOffset, err)
+		}
+		if n != int(ltag.length) {
+			return Tag{}, errors.New("incomplete read")
+		}
+		v, err := DecodeTypeData(ltag.ID.Type(), lt.order, data)
+		if err != nil {
+			return Tag{}, err
+		}
+		tag = Tag{ID: ltag.ID, data: v}
+
+	} else {
+		// 1, 2 or 4 byte length values, stored in place.
+		sz := ltag.Type.Size()
+		v, err := DecodeTypeData(ltag.Type, lt.order, ltag.arrayptr()[:sz])
+		if err != nil {
+			return Tag{}, err
+		}
+		tag = Tag{ID: ltag.ID, data: v}
+	}
+	return tag, nil
+}
+
+func (lt *LazyDecoder) GetTag(r io.ReaderAt, ifdLevel int, id ID) (_ Tag, err error) {
+	switch {
+	case len(lt.dirs) == 0:
+		err = errors.New("decoder empty: did decoding succeed?")
+	case ifdLevel > len(lt.dirs):
+		err = errors.New("IFD level exceeds available levels")
+	}
+	if err != nil {
+		return Tag{}, err
+	}
+	ifdTags := lt.dirs[ifdLevel].Tags
+	for _, lztag := range ifdTags {
+		if lztag.ID == id {
+			return lt.getTag(r, lztag)
+		}
+	}
+	return Tag{}, errors.New("tag ID not found in IFD")
 }
 
 // Decode marshals exif data in r lazily. It only stores values that have a

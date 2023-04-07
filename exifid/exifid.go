@@ -9,6 +9,8 @@ const (
 	ProcessingSoftware            exif.ID = 0x000b
 	SubfileType                   exif.ID = 0x00fe
 	OldSubfileType                exif.ID = 0x00ff
+	ImageWidth                    exif.ID = 0x0100
+	ImageHeight                   exif.ID = 0x0101
 	BitsPerSample                 exif.ID = 0x0102
 	Compression                   exif.ID = 0x0103
 	PhotometricInterpretation     exif.ID = 0x0106
@@ -241,8 +243,15 @@ const (
 	FocalLength                   exif.ID = 0x920a
 	FlashEnergy                   exif.ID = 0x920b
 	SpatialFrequencyResponse      exif.ID = 0x920c
+	Noise                         exif.ID = 0x920d
+	FocalPlaneXResolution         exif.ID = 0x920e
+	FocalPlaneYResolution         exif.ID = 0x920f
+	FocalPlaneResolutionUnit      exif.ID = 0x9210
+	ImageNumber                   exif.ID = 0x9211
 	SecurityClassification        exif.ID = 0x9212
+	ImageHistory                  exif.ID = 0x9213
 	SubjectArea                   exif.ID = 0x9214
+	ExposureIndex                 exif.ID = 0x9215
 	SensingMethod                 exif.ID = 0x9217
 	CIP3DataFile                  exif.ID = 0x923a
 	CIP3Sheet                     exif.ID = 0x923b
@@ -277,14 +286,7 @@ const (
 	SamsungRawPointersOffset      exif.ID = 0xa010
 	SamsungRawPointersLength      exif.ID = 0xa011
 	SamsungRawByteOrder           exif.ID = 0xa101
-	Noise                         exif.ID = 0xa20d
-	FocalPlaneXResolution         exif.ID = 0xa20e
-	FocalPlaneYResolution         exif.ID = 0xa20f
-	FocalPlaneResolutionUnit      exif.ID = 0xa210
-	ImageNumber                   exif.ID = 0xa211
-	ImageHistory                  exif.ID = 0xa213
 	SubjectLocation               exif.ID = 0xa214
-	ExposureIndex                 exif.ID = 0xa215
 	FileSource                    exif.ID = 0xa300
 	SceneType                     exif.ID = 0xa301
 	CFAPattern                    exif.ID = 0xa302
@@ -295,10 +297,14 @@ const (
 	FocalLengthIn35mmFormat       exif.ID = 0xa405
 	SceneCaptureType              exif.ID = 0xa406
 	GainControl                   exif.ID = 0xa407
+	Contrast                      exif.ID = 0xa408
 	Saturation                    exif.ID = 0xa409
+	Sharpness                     exif.ID = 0xa40a
 	DeviceSettingDescription      exif.ID = 0xa40b
 	SubjectDistanceRange          exif.ID = 0xa40c
 	ImageUniqueID                 exif.ID = 0xa420
+	OwnerName                     exif.ID = 0xa430
+	SerialNumber                  exif.ID = 0xa431
 	LensInfo                      exif.ID = 0xa432
 	LensMake                      exif.ID = 0xa433
 	LensModel                     exif.ID = 0xa434
@@ -320,8 +326,6 @@ const (
 	Transformation                exif.ID = 0xbc02
 	Uncompressed                  exif.ID = 0xbc03
 	ImageType                     exif.ID = 0xbc04
-	ImageWidth                    exif.ID = 0xbc80
-	ImageHeight                   exif.ID = 0xbc81
 	WidthResolution               exif.ID = 0xbc82
 	HeightResolution              exif.ID = 0xbc83
 	ImageOffset                   exif.ID = 0xbcc0
@@ -463,8 +467,6 @@ const (
 	RGBTables                     exif.ID = 0xcd3b
 	Padding                       exif.ID = 0xea1c
 	OffsetSchema                  exif.ID = 0xea1d
-	OwnerName                     exif.ID = 0xfde8
-	SerialNumber                  exif.ID = 0xfde9
 	Lens                          exif.ID = 0xfdea
 	KDC_IFD                       exif.ID = 0xfe00
 	RawFile                       exif.ID = 0xfe4c
@@ -472,7 +474,5 @@ const (
 	Exposure                      exif.ID = 0xfe51
 	Shadows                       exif.ID = 0xfe52
 	Brightness                    exif.ID = 0xfe53
-	Contrast                      exif.ID = 0xfe54
-	Sharpness                     exif.ID = 0xfe56
 	Smoothness                    exif.ID = 0xfe57
 )
