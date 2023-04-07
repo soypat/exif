@@ -18,7 +18,7 @@ func ExampleLazyDecoder() {
 	if err != nil {
 		panic(err)
 	}
-	ifds, err := decoder.MakeIFDs(fp, func(_ exif.IFD, id exif.ID) bool {
+	ifds, err := decoder.MakeIFDs(fp, func(ifd int, id exif.ID) bool {
 		return true // Make all tags.
 	})
 	if err != nil {
@@ -63,7 +63,7 @@ func ExampleLazyDecoder_onlyWords() {
 	}
 	// Here we are passing in a nil reader, so decoder will only process
 	// tags which have a lazy in-memory representation.
-	ifds, err := decoder.MakeIFDs(nil, func(_ exif.IFD, id exif.ID) bool {
+	ifds, err := decoder.MakeIFDs(nil, func(ifd int, id exif.ID) bool {
 		return true // Make all tags.
 	})
 	if err != nil {

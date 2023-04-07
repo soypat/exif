@@ -6,7 +6,7 @@
 *.dylib
 
 testdata/large.tiff
-
+local_test.go
 # Test binary, built with `go test -c`
 *.test
 

@@ -142,7 +142,11 @@ type ID uint16
 
 // String returns a camel case human readable representation of the ID.
 func (id ID) String() string {
-	return tags[uint16(id)].Name
+	tag, ok := tags[uint16(id)]
+	if !ok {
+		return "<unknown EXIF ID>"
+	}
+	return tag.Name
 }
 
 // Type returns the type of data the ID field would contain.

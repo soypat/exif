@@ -25,7 +25,7 @@ func BenchmarkThisPackage_SmallImage(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		_, err = decoder.MakeIFDs(fp, func(_ exif.IFD, id exif.ID) bool {
+		_, err = decoder.MakeIFDs(fp, func(ifd int, id exif.ID) bool {
 			return true
 		})
 		if err != nil {

@@ -13,13 +13,14 @@ type LazyDecoder struct {
 	dirs       []lazydir
 	order      binary.ByteOrder
 	baseOffset int64
+	app1Size   [2]byte
 }
 
 // MakeIFDs processes the collected tags in the LazyDecoder (obtained from a previous call to Decode)
 // and creates the corresponding EXIF tags.
 // If a nil reader is passed into MakeIFDs then only the tags which have a
 // lazy in-memory representation will be returned.
-func (lt *LazyDecoder) MakeIFDs(r io.ReaderAt, fn func(_ IFD, id ID) bool) ([]IFD, error) {
+func (lt *LazyDecoder) MakeIFDs(r io.ReaderAt, fn func(ifd int, id ID) bool) ([]IFD, error) {
 	if fn == nil {
 		return nil, errors.New("nil callback")
 	}
@@ -27,10 +28,10 @@ func (lt *LazyDecoder) MakeIFDs(r io.ReaderAt, fn func(_ IFD, id ID) bool) ([]IF
 		r = &offsetReaderAt{r: r, offset: lt.baseOffset}
 	}
 	var ifds []IFD
-	for _, dir := range lt.dirs {
+	for ifd, dir := range lt.dirs {
 		var tags []Tag
 		for _, tag := range dir.Tags {
-			if !fn(IFD{}, tag.ID) {
+			if !fn(ifd, tag.ID) {
 				continue // skip tag.
 			}
 
@@ -83,6 +84,7 @@ func (lt *LazyDecoder) Decode(r io.ReaderAt) (err error) {
 	start := string(buf[:2])
 	if start == "\xff\xd8" {
 		// start of image found.
+		copy(lt.app1Size[:2], buf[4:])
 		r.ReadAt(buf[:], 12)
 		r = &offsetReaderAt{r: r, offset: 12}
 		lt.baseOffset = 12
@@ -116,6 +118,13 @@ func (lt *LazyDecoder) Decode(r io.ReaderAt) (err error) {
 		lt.dirs = append(lt.dirs, d)
 	}
 	return nil
+}
+
+// EndOfApp1 returns the end of the APP1 segment with EXIF metadata.
+// This is only set when decoding images and not
+// just pure EXIF data.
+func (e *LazyDecoder) EndOfApp1() int64 {
+	return int64(e.order.Uint16(e.app1Size[:])) + 4 // App1 length does not include SOI and APP1 markers (4 bytes).
 }
 
 type lazydir struct {
