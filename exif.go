@@ -9,11 +9,12 @@ import (
 	"github.com/soypat/exif/rational"
 )
 
-//go:generate go run generate_tagdefinitions.go exif.go
+//go:generate go test generate_tagdefinitions.go exif.go tagdefinitions.go
 
 // IFD or Image File Directory
 type IFD struct {
-	Tags []Tag
+	Tags  []Tag
+	Group Group
 }
 
 // Tag represents an EXIF field and the contained data in the field.
@@ -66,27 +67,52 @@ const (
 	TypeString
 	TypeUint16
 	TypeUint32
+	// Unsigned rational type.
 	TypeURational64
 	TypeInt8
 	TypeUndefined
 	TypeInt16
 	TypeInt32
+	// Signed rational type.
 	TypeRational64
 	TypeFloat32
 	// TypeFloat64 can be found as the double type in EXIF spec.
 	TypeFloat64
 )
 
-// Group represents the IDF group.
+// Group represents the IFD group.
 type Group uint8
 
 const (
 	GroupNone Group = iota
-	GroupInteropIFD
+	// IFD of the main image. Usually contains ExifOffset tag which points to the ExifSubIFD.
 	GroupIFD0
-	GroupExifIFD
+	// IFD of the thumbnail.
+	GroupIFD1
+	// IFD containing digicam's information such as shutter speed, focal length etc.
 	GroupSubIFD
+	GroupExifIFD
+	GroupInteropIFD
 )
+
+// String returns a human readable representation of the IFD group. i.e: IFD0, IFD1, SubIFD.
+func (g Group) String() (s string) {
+	switch g {
+	case GroupIFD0:
+		s = "IFD0"
+	case GroupIFD1:
+		s = "IFD1"
+	case GroupSubIFD:
+		s = "SubIFD"
+	case GroupExifIFD:
+		s = "ExifIFD"
+	case GroupInteropIFD:
+		s = "InteropIFD"
+	default:
+		s = "<unknown IFD group>"
+	}
+	return s
+}
 
 // Size returns the size in bytes of the type. Can be 1, 2, 4, or 8 for valid types. 0 otherwise.
 func (tp Type) Size() (s uint8) {
@@ -154,11 +180,6 @@ func (id ID) Type() Type {
 	return tags[uint16(id)].Type
 }
 
-// Group returns the IFD group the id belongs to.
-func (id ID) Group() Group {
-	return tags[uint16(id)].Group
-}
-
 // IsMandatory returns true if the tag is specified as mandatory in the EXIF spec.
 func (id ID) IsMandatory() bool {
 	return tags[uint16(id)].flags.IsMandatory()
@@ -172,10 +193,9 @@ func (id ID) IsStaticSize() bool {
 type tagdef struct {
 	Name     string
 	arrayLen [2]int
-	ID       uint16
+	ID       ID
 	Type     Type
 	flags    flags
-	Group    Group
 }
 
 func newflags(unsafe, protected, avoid, writeConstrained, mandatory bool) flags {

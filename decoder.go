@@ -20,7 +20,10 @@ type LazyDecoder struct {
 // and creates the corresponding EXIF tags.
 // If a nil reader is passed into MakeIFDs then only the tags which have a
 // lazy in-memory representation will be returned.
-func (lt *LazyDecoder) MakeIFDs(r io.ReaderAt, fn func(ifd int, id ID) bool) ([]IFD, error) {
+// The callback passed in to MakeIFDs will decide if a tag is made or skipped depending
+// on whether the call returns true or false. The callback has the ifd level, size in bytes
+// and the tag's ID to decide whether to create the tag and allocate memory for it.
+func (lt *LazyDecoder) MakeIFDs(r io.ReaderAt, fn func(ifd, size int, id ID) bool) ([]IFD, error) {
 	if fn == nil {
 		return nil, errors.New("nil callback")
 	}
@@ -31,15 +34,16 @@ func (lt *LazyDecoder) MakeIFDs(r io.ReaderAt, fn func(ifd int, id ID) bool) ([]
 	for ifd, dir := range lt.dirs {
 		var tags []Tag
 		for _, tag := range dir.Tags {
-			if !fn(ifd, tag.ID) {
-				continue // skip tag.
+			sz := tag.size()
+			if r == nil && tag.dataOffset() != 0 {
+				continue // Nil reader means no way to read from file.
+			}
+			if !fn(ifd, sz, tag.ID) {
+				continue // User decides to skip tag.
 			}
 
 			if dataOffset := tag.dataOffset(); dataOffset != 0 {
-				if r == nil {
-					continue // Nil reader means no way to read from file.
-				}
-				// 8bit values or variable length value are stored at an offset position.
+				// 8-byte values or variable length value are stored at an offset position.
 				data := make([]byte, tag.length)
 				n, err := r.ReadAt(data, int64(dataOffset))
 				if err != nil {
@@ -55,7 +59,7 @@ func (lt *LazyDecoder) MakeIFDs(r io.ReaderAt, fn func(ifd int, id ID) bool) ([]
 				tags = append(tags, Tag{ID: tag.ID, data: v})
 
 			} else {
-				// 1, 2 or 4 bit length values, stored in place.
+				// 1, 2 or 4 byte length values, stored in place.
 				sz := tag.Type.Size()
 				v, err := DecodeTypeData(tag.Type, lt.order, tag.arrayptr()[:sz])
 				if err != nil {
@@ -64,7 +68,7 @@ func (lt *LazyDecoder) MakeIFDs(r io.ReaderAt, fn func(ifd int, id ID) bool) ([]
 				tags = append(tags, Tag{ID: tag.ID, data: v})
 			}
 		}
-		ifds = append(ifds, IFD{Tags: tags})
+		ifds = append(ifds, IFD{Tags: tags, Group: dir.Group})
 	}
 	return ifds, nil
 }
@@ -106,6 +110,10 @@ func (lt *LazyDecoder) Decode(r io.ReaderAt) (err error) {
 	}
 	// read offset to first IFD and load them.
 	offset := int64(order.Uint32(buf[4:]))
+	if offset == 0 {
+		return errors.New("zero IFD0 offset")
+	}
+	group := GroupIFD0
 	for offset != 0 {
 		d, next, err := decodeDir(r, offset, order)
 		if err != nil {
@@ -115,6 +123,33 @@ func (lt *LazyDecoder) Decode(r io.ReaderAt) (err error) {
 			return errors.New("recursive dir")
 		}
 		offset = next
+		if group < GroupSubIFD {
+			d.Group = group
+			group++
+		}
+		lt.dirs = append(lt.dirs, d)
+	}
+	var subIFDOffset uint32
+	for _, tag := range lt.dirs[0].Tags {
+		if tag.ID == 0x8769 && tag.dataOffset() == 0 { // Check ExifOffset ID.
+			subIFDOffset = lt.order.Uint32(tag.arrayptr()[:4])
+		}
+	}
+	if subIFDOffset == 0 {
+		return nil
+	}
+
+	offset = int64(subIFDOffset)
+	for offset != 0 {
+		d, next, err := decodeDir(r, offset, order)
+		if err != nil {
+			return err
+		}
+		if next == offset {
+			return errors.New("recursive dir")
+		}
+		offset = next
+		d.Group = GroupSubIFD
 		lt.dirs = append(lt.dirs, d)
 	}
 	return nil
@@ -128,7 +163,8 @@ func (e *LazyDecoder) EndOfApp1() int64 {
 }
 
 type lazydir struct {
-	Tags []lazytag
+	Tags  []lazytag
+	Group Group
 }
 
 type offsetReaderAt struct {
@@ -144,7 +180,7 @@ func decodeDir(r io.ReaderAt, offset int64, order binary.ByteOrder) (d lazydir, 
 	var buf [32]byte
 	n, err := r.ReadAt(buf[:2], offset)
 	if err != nil {
-		return d, 0, fmt.Errorf("while seeking offset at %d: %w", n, err)
+		return d, 0, fmt.Errorf("while seeking offset at %d: %w", offset, err)
 	}
 	if n != 2 {
 		return d, 0, errors.New("expected read 2 bytes at offset, got " + strconv.Itoa(n))
@@ -172,10 +208,11 @@ func decodeDir(r io.ReaderAt, offset int64, order binary.ByteOrder) (d lazydir, 
 }
 
 type lazytag struct {
+	offsetOrValue uint32
 	ID            ID
 	Type          Type
-	offsetOrValue uint32
-	length        uint32
+	// Size in bytes of field if array, else 0.
+	length int
 }
 
 func (lt *lazytag) dataOffset() uint32 {
@@ -183,6 +220,13 @@ func (lt *lazytag) dataOffset() uint32 {
 		return 0 // No data, only value.
 	}
 	return lt.offsetOrValue
+}
+
+func (lt *lazytag) size() int {
+	if lt.length == 0 {
+		return int(lt.Type.Size())
+	}
+	return lt.length
 }
 
 func (lt *lazytag) arrayptr() *[4]byte {
@@ -211,7 +255,7 @@ func decodeTag(r io.ReaderAt, offset int64, order binary.ByteOrder) (tg lazytag,
 	if sz == 0 || sz > 8 {
 		return tg, errors.New("invalid tag type: " + strconv.Itoa(int(tg.Type)))
 	}
-	length := count * uint32(sz)
+	length := int(count) * int(sz)
 	valueBuf := buf[8:12]
 	if length > 4 {
 		tg.offsetOrValue = order.Uint32(valueBuf)

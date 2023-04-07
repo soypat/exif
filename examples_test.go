@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/soypat/exif"
+	"github.com/soypat/exif/exifid"
 )
 
 func ExampleLazyDecoder() {
@@ -18,20 +19,20 @@ func ExampleLazyDecoder() {
 	if err != nil {
 		panic(err)
 	}
-	ifds, err := decoder.MakeIFDs(fp, func(ifd int, id exif.ID) bool {
-		return true // Make all tags.
+	ifds, err := decoder.MakeIFDs(fp, func(ifd, size int, id exif.ID) bool {
+		return size < 1024 // Tags less than a kilobyte in size.
 	})
 	if err != nil {
 		panic(err)
 	}
-	for i, ifd := range ifds {
-		fmt.Printf("ifd%d:\n", i)
+	for _, ifd := range ifds {
+		fmt.Printf("%s:\n", ifd.Group.String())
 		for _, tag := range ifd.Tags {
 			fmt.Println("\t" + strings.Trim(tag.String(), "\x00"))
 		}
 	}
 	//Output:
-	// ifd0:
+	// IFD0:
 	// 	ImageWidth (uint32): 1728
 	// 	ImageHeight (uint32): 2376
 	// 	BitsPerSample (uint16): 1
@@ -45,8 +46,8 @@ func ExampleLazyDecoder() {
 	// 	SamplesPerPixel (uint16): 1
 	// 	RowsPerStrip (uint32): 2376
 	// 	StripByteCounts (unknown): 18112
-	// 	XResolution (urational): 2000000/10000
-	// 	YResolution (urational): 2000000/10000
+	// 	XResolution (rational): 2000000/10000
+	// 	YResolution (rational): 2000000/10000
 	// 	PlanarConfiguration (uint16): 1
 	// 	ResolutionUnit (uint16): 2
 }
@@ -63,19 +64,20 @@ func ExampleLazyDecoder_onlyWords() {
 	}
 	// Here we are passing in a nil reader, so decoder will only process
 	// tags which have a lazy in-memory representation.
-	ifds, err := decoder.MakeIFDs(nil, func(ifd int, id exif.ID) bool {
-		return true // Make all tags.
+	ifds, err := decoder.MakeIFDs(nil, func(ifd, size int, id exif.ID) bool {
+		// Make all encountered tags except ExifOffset.
+		return true && id != exifid.ExifOffset
 	})
 	if err != nil {
 		panic(err)
 	}
-	for i, ifd := range ifds {
-		fmt.Printf("ifd%d:\n", i)
+	for _, ifd := range ifds {
+		fmt.Printf("%s:\n", ifd.Group.String())
 		for _, tag := range ifd.Tags {
 			fmt.Println("\t" + strings.Trim(tag.String(), "\x00"))
 		}
 	}
-	// ifd0:
+	// IFD0:
 	//	ImageWidth (uint32): 1728
 	//	ImageHeight (uint32): 2376
 	//	BitsPerSample (uint16): 1

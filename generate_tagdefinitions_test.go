@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Tag ID	Tag Name	Writable	Group	Values / Notes
@@ -20,6 +22,8 @@ var txt []byte
 
 func ExampleGeneration() {
 	fp, _ := os.Create("tagdefinitions.go")
+	defer fp.Close()
+	// fp, _ = os.Open(os.DevNull)
 	scn := bufio.NewScanner(bytes.NewReader(txt))
 	var tags []TagPreproces
 	var currentType TagPreproces
@@ -76,12 +80,18 @@ var tags = map[uint16]tagdef{
 		default:
 			grp = GroupNone
 		}
-		fmt.Fprintf(fp, "\t%0#4x: {Name: %q, Type: %0#x, ID: %0#x, flags: %d, arrayLen: [2]int{%d, %d}, Group: %d},\n",
-			tag.ID, tag.Tagname, tp, tag.ID, flag, arraylen[0], arraylen[1], grp)
+		str := fmt.Sprintf("\t%0#4x: {Name: %q, Type: %d, flags: %x, arrayLen: [2]int{%d, %d}",
+			tag.ID, tag.Tagname, tp, flag, arraylen[0], arraylen[1])
+		fmt.Fprint(fp, str)
+		fmt.Fprintf(fp, ", ID: %0#4x", tag.ID)
+		fp.WriteString("},\n")
+		_ = grp
 
 		// fmt.Fprintf(fp, "\t%+v %d %d\n", tag.Writable, tp, flag)
 	}
 	fmt.Fprint(fp, "}\n")
+	genExifid()
+	fmt.Println(time.Now()) // so that generate runs.
 	// Output:
 	// None.
 }
@@ -138,14 +148,14 @@ func parseType(s string) (tp Type, flags flags, arrayLen [2]int) {
 		tp = TypeUint32 + signedAdd
 	case "int8":
 		tp = TypeUint8 + signedAdd
+	case "rational64":
+		tp = TypeURational64 + signedAdd
 	case "double":
 		tp = TypeFloat64
 	case "float":
 		tp = TypeFloat32
 	case "string":
 		tp = TypeString
-	case "rational64":
-		tp = TypeRational64 + signedAdd
 	default:
 		panic(fmt.Sprintf("unknwon type string %q from parsed %q", typeString, s))
 	}
@@ -160,3 +170,39 @@ type TagPreproces struct {
 	Group    string
 	Values   []string
 }
+
+func genExifid() {
+	os.Mkdir("exifid", 0777)
+	fp, err := os.Create("exifid/exifid.go")
+	if err != nil {
+		panic(err)
+	}
+	defer fp.Close()
+	fp.WriteString(`package exifid
+
+import "github.com/soypat/exif"
+
+// All Exif field/tag IDs.
+const (
+`)
+	var tagslice tagdefs
+	written := make(map[string]struct{})
+	for _, tag := range tags {
+		if _, ok := written[tag.Name]; !ok && !strings.ContainsAny(tag.Name, "-?") {
+			written[tag.Name] = struct{}{}
+			tagslice = append(tagslice, tag)
+		}
+	}
+	sort.Sort(tagslice)
+	for _, tag := range tagslice {
+		fmt.Fprintf(fp, "\t%s exif.ID = %0#4x\n", tag.Name, uint16(tag.ID))
+		written[tag.Name] = struct{}{}
+	}
+	fp.WriteString(")\n")
+}
+
+type tagdefs []tagdef
+
+func (a tagdefs) Len() int           { return len(a) }
+func (a tagdefs) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a tagdefs) Less(i, j int) bool { return a[i].ID < a[j].ID }
