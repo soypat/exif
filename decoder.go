@@ -32,8 +32,8 @@ func (lt *LazyDecoder) MakeIFDs(r io.ReaderAt, fn func(ifd, size int, id ID) boo
 	}
 	var ifds []IFD
 	for ifd, dir := range lt.dirs {
-		var tags []Tag
-		for _, lztag := range dir.Tags {
+		tags := make([]Tag, len(dir.Tags))
+		for i, lztag := range dir.Tags {
 			sz := lztag.size()
 			if r == nil && lztag.dataOffset() != 0 {
 				continue // Nil reader means no way to read from file.
@@ -44,9 +44,9 @@ func (lt *LazyDecoder) MakeIFDs(r io.ReaderAt, fn func(ifd, size int, id ID) boo
 			tag, err := lt.getTag(r, lztag)
 			if err != nil {
 				// Return correctly generated tags up to the point of failure.
-				return append(ifds, IFD{Tags: tags, Group: dir.Group}), err
+				return append(ifds, IFD{Tags: tags[:i], Group: dir.Group}), err
 			}
-			tags = append(tags, tag)
+			tags[i] = tag
 		}
 		ifds = append(ifds, IFD{Tags: tags, Group: dir.Group})
 	}
@@ -205,6 +205,7 @@ func decodeDir(r io.ReaderAt, offset int64, order binary.ByteOrder) (d lazydir, 
 		return d, 0, errors.New("expected read 2 bytes at offset, got " + strconv.Itoa(n))
 	}
 	nTags := order.Uint16(buf[:2])
+	d.Tags = make([]lazytag, nTags)
 	// load tags
 	totalOffset := offset + 2
 	for n := 0; n < int(nTags); n++ {
@@ -212,7 +213,7 @@ func decodeDir(r io.ReaderAt, offset int64, order binary.ByteOrder) (d lazydir, 
 		if err != nil {
 			return d, 0, err
 		}
-		d.Tags = append(d.Tags, t)
+		d.Tags[n] = t
 		totalOffset += 12 // size of tag field.
 	}
 	n, err = r.ReadAt(buf[:4], totalOffset)
@@ -295,11 +296,6 @@ type offsetReaderAt struct {
 	bufOffset int64
 }
 
-var (
-	CSAVE int
-	CMISS int
-)
-
 func (or *offsetReaderAt) ReadAt(p []byte, off int64) (n int, err error) {
 	off += or.offset // Work in underlying reader coordinates from here on out.
 	if len(p) < len(or.buf) {
@@ -309,10 +305,8 @@ func (or *offsetReaderAt) ReadAt(p []byte, off int64) (n int, err error) {
 		if off >= bufStart && end <= bufEnd {
 			start := off - bufStart
 			n := copy(p, or.buf[start:start+int64(len(p))])
-			CSAVE++
 			return n, nil
 		}
-		CMISS++
 		// If we miss the buffer then we reload file contents into memory.
 		nn, err := or.r.ReadAt(or.buf[:cap(or.buf)], off)
 		if err != nil && nn < len(p) {
