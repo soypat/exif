@@ -168,7 +168,7 @@ type ID uint16
 
 // String returns a camel case human readable representation of the ID.
 func (id ID) String() string {
-	tag, ok := tags[uint16(id)]
+	tag, ok := getTagdef(id)
 	if !ok {
 		return "<unknown EXIF ID>"
 	}
@@ -177,17 +177,20 @@ func (id ID) String() string {
 
 // Type returns the type of data the ID field would contain.
 func (id ID) Type() Type {
-	return tags[uint16(id)].Type
+	tg, _ := getTagdef(id)
+	return tg.Type
 }
 
 // IsMandatory returns true if the tag is specified as mandatory in the EXIF spec.
 func (id ID) IsMandatory() bool {
-	return tags[uint16(id)].flags.IsMandatory()
+	tg, _ := getTagdef(id)
+	return tg.flags.IsMandatory()
 }
 
 // IsStaticSize returns true if the ids data array size is of constrained length/size.
 func (id ID) IsStaticSize() bool {
-	return tags[uint16(id)].arrayLen[1] != 0
+	tg, _ := getTagdef(id)
+	return tg.arrayLen[1] != 0
 }
 
 type tagdef struct {
@@ -388,3 +391,13 @@ func toInt(v any) (ret int64, _ error) {
 var (
 	arrayLenInvalid = [2]int{-1, -1}
 )
+
+//go:inline
+func getTagdef(id ID) (tagdef, bool) {
+	tag, ok := tags[uint16(id)]
+	return tag, ok
+	// if int(id) > len(tags) {
+	// 	return tagdef{}, false
+	// }
+	// return tags[id], true
+}
