@@ -32,7 +32,7 @@ func (lt *LazyDecoder) MakeIFDs(r io.ReaderAt, fn func(ifd, size int, id ID) boo
 	}
 	var ifds []IFD
 	for ifd, dir := range lt.dirs {
-		tags := make([]Tag, len(dir.Tags))
+		tags := make([]Tag, 0, len(dir.Tags))
 		for i, lztag := range dir.Tags {
 			sz := lztag.size()
 			if r == nil && lztag.dataOffset() != 0 {
@@ -46,7 +46,7 @@ func (lt *LazyDecoder) MakeIFDs(r io.ReaderAt, fn func(ifd, size int, id ID) boo
 				// Return correctly generated tags up to the point of failure.
 				return append(ifds, IFD{Tags: tags[:i], Group: dir.Group}), err
 			}
-			tags[i] = tag
+			tags = append(tags, tag)
 		}
 		ifds = append(ifds, IFD{Tags: tags, Group: dir.Group})
 	}

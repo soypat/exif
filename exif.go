@@ -311,7 +311,16 @@ func (tag Tag) Int() (int64, error) {
 		return v, nil
 	}
 	return 0, fmt.Errorf("tag did not contain integer type %T (%s)", tag.data, err)
+}
 
+// MustInt returns the integer contained in the tag's value.
+// It is a wrapper around Int that panics if Int returns an error.
+func (tag Tag) MustInt() int64 {
+	i, err := tag.Int()
+	if err != nil {
+		panic(err)
+	}
+	return i
 }
 
 // Float returns the float32 or float64 value contained in the tag if the value is of float type.
@@ -335,6 +344,16 @@ func (tag Tag) Float() (float64, error) {
 	return 0, fmt.Errorf("tag did not contain float type: %T", tag.data)
 }
 
+// MustFloat returns the float contained in the tag's value.
+// It is a wrapper around Float that panics if Float returns an error.
+func (tag Tag) MustFloat() float64 {
+	f64, err := tag.Float()
+	if err != nil {
+		panic(err)
+	}
+	return f64
+}
+
 // Rational returns the underlying rational number contained in the tag if
 // the value implements the [rational.Rational] interface.
 // This function returns an error if the ID of the tag does not match a rational
@@ -351,6 +370,16 @@ func (tag Tag) Rational() (rational.Rational, error) {
 		return nil, fmt.Errorf("tag did not contain a rational type: %T", tag.data)
 	}
 	return v, nil
+}
+
+// MustRational returns the rational number contained in the tag's value.
+// It is a wrapper around Rational that panics if Rational returns an error.
+func (tag Tag) MustRational() rational.Rational {
+	rat, err := tag.Rational()
+	if err != nil {
+		panic(err)
+	}
+	return rat
 }
 
 func toInt(v any) (ret int64, _ error) {
