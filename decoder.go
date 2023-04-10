@@ -95,6 +95,9 @@ func (lt *LazyDecoder) GetTag(r io.ReaderAt, ifdLevel int, id ID) (_ Tag, err er
 	ifdTags := lt.dirs[ifdLevel].Tags
 	for _, lztag := range ifdTags {
 		if lztag.ID == id {
+			if r == nil && lztag.dataOffset() != 0 {
+				return Tag{}, errors.New("need non-nil reader to read tag " + id.String())
+			}
 			return lt.getTag(r, lztag)
 		}
 	}

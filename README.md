@@ -72,18 +72,34 @@ func BenchmarkDsoprea_SmallImage(b *testing.B) {
 ```
 
 </details>
+
 ## Example
+Example of usage of this library. We read a single tag value for the `XResolution` tag
+and then print out all the Exif tags in the file under the Image File Directories. In this
+case we only have IFD0.
 
 ```go
 	fp, err := os.Open("testdata/sample1.tiff")
 	if err != nil {
 		panic(err)
 	}
+	defer fp.Close()
 	var decoder exif.LazyDecoder
 	err = decoder.Decode(fp)
 	if err != nil {
 		panic(err)
 	}
+
+	// Read a single tag from the decoded tags.
+	xResTag, err := decoder.GetTag(fp, 0, exifid.XResolution)
+	if err != nil {
+		panic("compression tag not found")
+	}
+	// One can also use the Rational, Float and Int methods to obtain 
+	// statically typed tag values. The Value method returns interface{} type.
+	fmt.Printf("the x resolution is %v", xResTag.Value())
+
+	// Generate all tags of a certain constrained size using a callback.
 	ifds, err := decoder.MakeIFDs(fp, func(ifd, size int, id exif.ID) bool {
 		return size < 1024 // Tags less than a kilobyte in size.
 	})
@@ -100,6 +116,7 @@ func BenchmarkDsoprea_SmallImage(b *testing.B) {
 
 Outputs:
 ```
+the x resolution is 2000000/10000
 IFD0:
 	ImageWidth (uint32): 1728
 	ImageHeight (uint32): 2376

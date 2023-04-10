@@ -14,6 +14,7 @@ func ExampleLazyDecoder() {
 	if err != nil {
 		panic(err)
 	}
+	defer fp.Close()
 	var decoder exif.LazyDecoder
 	err = decoder.Decode(fp)
 	if err != nil {
@@ -52,11 +53,12 @@ func ExampleLazyDecoder() {
 	// 	ResolutionUnit (uint16): 2
 }
 
-func ExampleLazyDecoder_onlySmallTags() {
+func ExampleLazyDecoder_onlyInMemoryTags() {
 	fp, err := os.Open("testdata/sample1.tiff")
 	if err != nil {
 		panic(err)
 	}
+	defer fp.Close()
 	var decoder exif.LazyDecoder
 	err = decoder.Decode(fp)
 	if err != nil {
@@ -101,34 +103,42 @@ func ExampleLazyDecoder_GetTag() {
 	if err != nil {
 		panic(err)
 	}
+	defer fp.Close()
 	var decoder exif.LazyDecoder
 	err = decoder.Decode(fp)
 	if err != nil {
 		panic(err)
 	}
 
-	widthTag, errW := decoder.GetTag(nil, 0, exifid.ImageWidth)
-	heightTag, errH := decoder.GetTag(nil, 0, exifid.ImageHeight)
+	// We can get tags from the decoder once the file has been decoded.
+	// The decoder does not require the file as an argument for tags
+	// that have a in-memory lazy representation. If the tag needs the reader
+	// to be parsed then an error will be returned by GetTag.
+	widthTag, errW := decoder.GetTag(fp, 0, exifid.ImageWidth)
+	heightTag, errH := decoder.GetTag(fp, 0, exifid.ImageHeight)
 	if errW != nil || errH != nil {
 		panic("expected width or height tags in image")
 	}
 	fmt.Println(widthTag, heightTag)
 
 	// One can assert the integer type using the Int and MustInt methods of a tag.
-	compressionTag, err := decoder.GetTag(nil, 0, exifid.Compression)
+	compressionTag, err := decoder.GetTag(fp, 0, exifid.Compression)
 	if err != nil {
 		panic("compression tag not found")
 	}
 	fmt.Printf("the compression is %d\n", compressionTag.MustInt())
 
 	// You can also generically print values with the Value method.
-	stripTag, err := decoder.GetTag(nil, 0, exifid.StripByteCounts)
+	// In this case we need to pass in the file since the XResolution
+	// tag does not have a in-memory representation in the lazy decoder.
+	// This may change in the future. Best practice is to always pass in the reader.
+	xResTag, err := decoder.GetTag(fp, 0, exifid.XResolution)
 	if err != nil {
 		panic("compression tag not found")
 	}
-	fmt.Printf("the stripByteCounts is %v", stripTag.Value())
+	fmt.Printf("the x resolution is %v", xResTag.Value())
 	// Output:
 	// ImageWidth (uint32): 1728 ImageHeight (uint32): 2376
 	// the compression is 4
-	// the stripByteCounts is 18112
+	// the x resolution is 2000000/10000
 }
