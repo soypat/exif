@@ -81,11 +81,17 @@ func (i U64) Fraction() (numerator, denominator int) {
 }
 
 func (i I64) String() string {
+	if i.num == 0 {
+		return "0"
+	}
 	num, den := i.Fraction()
 	return strconv.Itoa(int(num)) + "/" + strconv.Itoa(int(den))
 }
 
 func (i U64) String() string {
+	if i.num == 0 {
+		return "0"
+	}
 	num, den := i.Fraction()
 	return strconv.FormatUint(uint64(num), 10) + "/" + strconv.FormatUint(uint64(den), 10)
 }

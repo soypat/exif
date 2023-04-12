@@ -14,6 +14,7 @@ type LazyDecoder struct {
 	order      binary.ByteOrder
 	baseOffset int64
 	app1Size   [2]byte
+	buf        [8]byte
 }
 
 // MakeIFDs processes the collected tags in the LazyDecoder (obtained from a previous call to Decode)
@@ -53,31 +54,37 @@ func (lt *LazyDecoder) MakeIFDs(r io.ReaderAt, fn func(ifd, size int, id ID) boo
 	return ifds, nil
 }
 
-func (lt *LazyDecoder) getTag(r io.ReaderAt, ltag lazytag) (tag Tag, err error) {
-	if dataOffset := ltag.dataOffset(); dataOffset != 0 {
+func (lt *LazyDecoder) getTag(r io.ReaderAt, lztag lazytag) (tag Tag, err error) {
+	if dataOffset := lztag.dataOffset(); dataOffset != 0 {
 		// 8-byte values or variable length value are stored at an offset position.
-		data := make([]byte, ltag.length)
+		var data []byte
+		if lztag.length == 8 && lztag.Type != TypeUndefined {
+			data = lt.buf[:8]
+		} else {
+			data = make([]byte, lztag.length)
+		}
+
 		n, err := r.ReadAt(data, int64(dataOffset))
 		if err != nil {
-			return Tag{}, fmt.Errorf("reading %d/%d exif data at %#x: %w", n, ltag.length, dataOffset, err)
+			return Tag{}, fmt.Errorf("reading %d/%d exif data at %#x: %w", n, lztag.length, dataOffset, err)
 		}
-		if n != int(ltag.length) {
+		if n != int(lztag.length) {
 			return Tag{}, errors.New("incomplete read")
 		}
-		v, err := DecodeTypeData(ltag.ID.Type(), lt.order, data)
+		v, err := DecodeTypeData(lztag.ID.Type(), lt.order, data)
 		if err != nil {
 			return Tag{}, err
 		}
-		tag = Tag{ID: ltag.ID, data: v}
+		tag = Tag{ID: lztag.ID, data: v}
 
 	} else {
 		// 1, 2 or 4 byte length values, stored in place.
-		sz := ltag.Type.Size()
-		v, err := DecodeTypeData(ltag.Type, lt.order, ltag.arrayptr()[:sz])
+		sz := lztag.Type.Size()
+		v, err := DecodeTypeData(lztag.Type, lt.order, lztag.arrayptr()[:sz])
 		if err != nil {
 			return Tag{}, err
 		}
-		tag = Tag{ID: ltag.ID, data: v}
+		tag = Tag{ID: lztag.ID, data: v}
 	}
 	return tag, nil
 }
@@ -256,40 +263,37 @@ func (lt *lazytag) arrayptr() *[4]byte {
 	return (*[4]byte)(unsafe.Pointer(&lt.offsetOrValue))
 }
 
-func decodeTag(r io.ReaderAt, offset int64, order binary.ByteOrder) (tg lazytag, err error) {
+func decodeTag(r io.ReaderAt, offset int64, order binary.ByteOrder) (lztag lazytag, err error) {
 	var buf [12]byte
 	n, err := r.ReadAt(buf[:], offset)
 	if err != nil {
-		return tg, err
+		return lztag, err
 	}
 	if n != len(buf) {
-		return tg, errors.New("reading tag got short read (" + strconv.Itoa(n) + ")")
+		return lztag, errors.New("reading tag got short read (" + strconv.Itoa(n) + ")")
 	}
-	tg.ID = ID(order.Uint16(buf[0:]))
-	tg.Type = Type(order.Uint16(buf[2:]))
-	// if tg.ID.Type() != tg.Type {
-	//   err = fmt.Errorf("type mismatch for tag ID %q(%#x), got %s, expected %s", tg.ID.String(), uint16(tg.ID), tg.Type.String(), tg.ID.Type().String())
-	// }
+	lztag.ID = ID(order.Uint16(buf[0:]))
+	lztag.Type = Type(order.Uint16(buf[2:]))
 	count := order.Uint32(buf[4:])
 	if count == 1<<32-1 {
-		return tg, errors.New("invalid count offset in tag")
+		return lztag, errors.New("invalid count offset in tag")
 	}
-	sz := tg.Type.Size()
+	sz := lztag.Type.Size()
 	if sz == 0 || sz > 8 {
-		return tg, errors.New("invalid tag type: " + strconv.Itoa(int(tg.Type)))
+		return lztag, errors.New("invalid tag type: " + strconv.Itoa(int(lztag.Type)))
 	}
 	length := int(count) * int(sz)
 	valueBuf := buf[8:12]
 	if length > 4 {
-		tg.offsetOrValue = order.Uint32(valueBuf)
-		tg.length = length
+		lztag.offsetOrValue = order.Uint32(valueBuf)
+		lztag.length = length
 
 	} else {
-		arr := tg.arrayptr()
+		arr := lztag.arrayptr()
 		copy(arr[:], valueBuf)
 		_ = arr // Place breakpoints for debugging.
 	}
-	return tg, nil
+	return lztag, nil
 }
 
 type offsetReaderAt struct {
