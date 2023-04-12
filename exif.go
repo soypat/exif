@@ -298,6 +298,26 @@ func (tp Type) IsRational() bool {
 	return tp == TypeRational64 || tp == TypeURational64
 }
 
+// Bytes returns the bytes contained in the tag value if the tag is of
+// the TypeString or TypeUndefined Exif tag type.
+func (tag Tag) Bytes() (v []byte, err error) {
+	tp := tag.ID.Type()
+	if tp != TypeString && tp != TypeUndefined {
+		return nil, errors.New("Bytes undefined for type " + tp.String())
+	}
+	switch c := tag.data.(type) {
+	case nil:
+		// Do nothing. TODO(soypat): Should this be an error?
+	case string:
+		v = []byte(c)
+	case []byte:
+		v = c
+	default:
+		err = fmt.Errorf("mismatching type in Tag of type %s: %T", tp.String(), tag.data)
+	}
+	return v, err
+}
+
 // Int returns the integer value contained in the tag if the value is of integer type.
 // This function returns an error if the ID of the tag does not match a integer type
 // (signed or unsigned) or if the type contained is not a integer type.
