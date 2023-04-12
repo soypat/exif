@@ -7,6 +7,7 @@
 
 testdata/large.tiff
 local_test.go
+_local_test.go
 .vscode
 # Test binary, built with `go test -c`
 *.test

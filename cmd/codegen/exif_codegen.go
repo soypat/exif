@@ -1,6 +1,4 @@
-//go:build generate
-
-package exif
+package main
 
 import (
 	"bufio"
@@ -13,6 +11,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	_ "unsafe"
+
+	"github.com/soypat/exif"
 )
 
 // Tag ID	Tag Name	Writable	Group	Values / Notes
@@ -20,7 +21,7 @@ import (
 //go:embed exif.txt
 var txt []byte
 
-func ExampleGeneration() {
+func main() {
 	fp, _ := os.Create("tagdefinitions.go")
 	defer fp.Close()
 	// fp, _ = os.Open(os.DevNull)
@@ -67,18 +68,18 @@ var tags = map[uint16]tagdef{
 	for i := range tags {
 		tag := tags[i]
 		tp, flag, arraylen := parseType(tag.Writable)
-		var grp Group
+		var grp exif.Group
 		switch tag.Group {
 		case "IFD0":
-			grp = GroupIFD0
+			grp = exif.GroupIFD0
 		case "ExifIFD":
-			grp = GroupExifIFD
+			grp = exif.GroupExifIFD
 		case "InteropIFD":
-			grp = GroupInteropIFD
+			grp = exif.GroupInteropIFD
 		case "SubIFD":
-			grp = GroupSubIFD
+			grp = exif.GroupSubIFD
 		default:
-			grp = GroupNone
+			grp = exif.GroupNone
 		}
 		str := fmt.Sprintf("\t%0#4x: {Name: %q, Type: %d, flags: %x, arrayLen: [2]int{%d, %d}",
 			tag.ID, tag.Tagname, tp, flag, arraylen[0], arraylen[1])
@@ -90,14 +91,14 @@ var tags = map[uint16]tagdef{
 		// fmt.Fprintf(fp, "\t%+v %d %d\n", tag.Writable, tp, flag)
 	}
 	fmt.Fprint(fp, "}\n")
-	genExifid()
+	genExifid(tags)
 	fmt.Println(time.Now()) // so that generate runs.
 	// Output:
 	// None.
 }
 
-func parseType(s string) (tp Type, flags flags, arrayLen [2]int) {
-	arrayLen = arrayLenInvalid // default value is -1, -1.
+func parseType(s string) (tp exif.Type, flags uint8, arrayLen [2]int) {
+	arrayLen = [2]int{-1, -1} // default value is -1, -1.
 	if s == "-" || len(s) == 0 {
 		return 0, 0, arrayLen
 	}
@@ -138,28 +139,29 @@ func parseType(s string) (tp Type, flags flags, arrayLen [2]int) {
 	if isSigned || typeString[len(typeString)-1] == 'u' {
 		typeString = typeString[:len(typeString)-1]
 	}
-	signedAdd := Type(b2u8(isSigned)) * 5
+	signedAdd := exif.Type(b2u8(isSigned)) * 5
 	switch typeString {
 	case "undef":
-		tp = TypeUndefined
+		tp = exif.TypeUndefined
 	case "int16":
-		tp = TypeUint16
+		tp = exif.TypeUint16
 	case "int32":
-		tp = TypeUint32 + signedAdd
+		tp = exif.TypeUint32 + signedAdd
 	case "int8":
-		tp = TypeUint8 + signedAdd
+		tp = exif.TypeUint8 + signedAdd
 	case "rational64":
-		tp = TypeURational64 + signedAdd
+		tp = exif.TypeURational64 + signedAdd
 	case "double":
-		tp = TypeFloat64
+		tp = exif.TypeFloat64
 	case "float":
-		tp = TypeFloat32
+		tp = exif.TypeFloat32
 	case "string":
-		tp = TypeString
+		tp = exif.TypeString
 	default:
 		panic(fmt.Sprintf("unknwon type string %q from parsed %q", typeString, s))
 	}
-	return tp, newflags(unsafe, protected, avoid, writeConstrained, mandatory),
+	flags = newflags(unsafe, protected, avoid, writeConstrained, mandatory)
+	return tp, flags,
 		[2]int{arrayLengthMin, arrayLengthMax}
 }
 
@@ -171,7 +173,7 @@ type TagPreproces struct {
 	Values   []string
 }
 
-func genExifid() {
+func genExifid(tags tagPs) {
 	os.Mkdir("exifid", 0777)
 	fp, err := os.Create("exifid/exifid.go")
 	if err != nil {
@@ -185,39 +187,50 @@ import "github.com/soypat/exif"
 // All Exif field/tag IDs.
 const (
 `)
-	var tagslice tagdefs
+	// Sort for consistent results.
+	sort.Sort(tags)
+	var tagslice tagPs
 
 	for _, tag := range tags {
-		if !strings.ContainsAny(tag.Name, "-?") {
+		if !strings.ContainsAny(tag.Tagname, "-?") {
 			tagslice = append(tagslice, tag)
 		}
 	}
-	// Sort for consistent results.
-	sort.Sort(tagslice)
+
 	// Delete duplicated entries
 	written := make(map[string]struct{})
 	maxLen := 0
-	var uniqTagSlice []tagdef
+	var uniqTagSlice tagPs
 	for _, tag := range tagslice {
-		_, ok := written[tag.Name]
+		_, ok := written[tag.Tagname]
 		if !ok {
 			uniqTagSlice = append(uniqTagSlice, tag)
-			written[tag.Name] = struct{}{}
-			if len(tag.Name) > maxLen {
-				maxLen = len(tag.Name)
+			written[tag.Tagname] = struct{}{}
+			if len(tag.Tagname) > maxLen {
+				maxLen = len(tag.Tagname)
 			}
 		}
 	}
 	fmtString := "\t%-" + strconv.Itoa(maxLen) + "s exif.ID = %0#4x\n"
 	for _, tag := range uniqTagSlice {
-		fmt.Fprintf(fp, fmtString, tag.Name, uint16(tag.ID))
-		written[tag.Name] = struct{}{}
+		fmt.Fprintf(fp, fmtString, tag.Tagname, uint16(tag.ID))
+		written[tag.Tagname] = struct{}{}
 	}
 	fp.WriteString(")\n")
 }
 
-type tagdefs []tagdef
+type tagPs []TagPreproces
 
-func (a tagdefs) Len() int           { return len(a) }
-func (a tagdefs) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a tagdefs) Less(i, j int) bool { return a[i].ID < a[j].ID }
+func (a tagPs) Len() int           { return len(a) }
+func (a tagPs) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a tagPs) Less(i, j int) bool { return a[i].ID < a[j].ID }
+
+//go:linkname newflags github.com/soypat/exif.newflags
+func newflags(unsafe, protected, avoid, writeConstrained, mandatory bool) uint8
+
+func b2u8(b bool) uint8 {
+	if b {
+		return 1
+	}
+	return 0
+}
