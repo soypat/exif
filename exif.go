@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strconv"
 
 	"github.com/soypat/exif/rational"
 )
@@ -25,6 +26,9 @@ type Tag struct {
 
 // String returns a human readable representation of the tag and its value.
 func (t Tag) String() string {
+	if v, err := t.Int(); err == nil {
+		return fmt.Sprintf("%s (%s): %v", t.ID.String(), t.ID.Type().String(), stringTagInt(t.ID, v))
+	}
 	return fmt.Sprintf("%s (%s): %v", t.ID.String(), t.ID.Type().String(), t.Value())
 }
 
@@ -194,11 +198,13 @@ func (id ID) IsStaticSize() bool {
 }
 
 type tagdef struct {
-	Name     string
-	arrayLen [2]int
-	ID       ID
-	Type     Type
-	flags    flags
+	Name       string
+	arrayLen   [2]int
+	ID         ID
+	Type       Type
+	flags      flags
+	enum       []int64
+	enumString []string
 }
 
 func newflags(unsafe, protected, avoid, writeConstrained, mandatory bool) flags {
@@ -429,4 +435,17 @@ func getTagdef(id ID) (tagdef, bool) {
 	// 	return tagdef{}, false
 	// }
 	// return tags[id], true
+}
+
+func stringTagInt(id ID, value int64) string {
+	tag, ok := getTagdef(id)
+	if !ok || len(tag.enum) == 0 {
+		return strconv.FormatInt(value, 10)
+	}
+	for i, v := range tag.enum {
+		if v == value {
+			return tag.enumString[i]
+		}
+	}
+	return strconv.FormatInt(value, 10)
 }

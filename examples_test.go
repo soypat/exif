@@ -39,9 +39,9 @@ func ExampleLazyDecoder() {
 	// 	Model (string): RP_imx477
 	// 	XResolution (rational): 72/1
 	// 	YResolution (rational): 72/1
-	// 	ResolutionUnit (uint16): 2
+	// 	ResolutionUnit (uint16): inches
 	// 	ModifyDate (string): 2023:01:04 14:18:34
-	// 	YCbCrPositioning (uint16): 1
+	// 	YCbCrPositioning (uint16): Centered
 	// 	ExifOffset (unknown): 192
 	// IFD1:
 	// 	ImageWidth (uint32): 64
@@ -49,12 +49,12 @@ func ExampleLazyDecoder() {
 	// 	Compression (uint16): 6
 	// 	XResolution (rational): 72/1
 	// 	YResolution (rational): 72/1
-	// 	ResolutionUnit (uint16): 2
+	// 	ResolutionUnit (uint16): inches
 	// 	ThumbnailOffset (uint32): 958
 	// 	ThumbnailLength (uint32): 24576
 	// SubIFD:
 	// 	ExposureTime (rational): 39636/1000000
-	// 	ExposureProgram (uint16): 3
+	// 	ExposureProgram (uint16): Aperture-priority AE
 	// 	ISO (uint16): 6
 	// 	ExifVersion (undefined): [48]
 	// 	DateTimeOriginal (string): 2023:01:04 14:18:34
@@ -62,15 +62,15 @@ func ExampleLazyDecoder() {
 	// 	ComponentsConfiguration (undefined): [1]
 	// 	ShutterSpeedValue (urational): 4657045/1000000
 	// 	BrightnessValue (urational): 0
-	// 	MeteringMode (uint16): 2
+	// 	MeteringMode (uint16): Center-weighted average
 	// 	Flash (uint16): 0
 	// 	FlashpixVersion (undefined): [48]
-	// 	ColorSpace (uint16): 1
+	// 	ColorSpace (uint16): sRGB
 	// 	ExifImageWidth (uint16): 2048
 	// 	ExifImageHeight (uint16): 1536
 	// 	InteropOffset (unknown): 822
-	// 	ExposureMode (uint16): 0
-	// 	WhiteBalance (uint16): 0
+	// 	ExposureMode (uint16): Auto
+	// 	WhiteBalance (uint16): Auto
 }
 
 func ExampleLazyDecoder_onlyWords() {
@@ -98,18 +98,19 @@ func ExampleLazyDecoder_onlyWords() {
 			fmt.Println("\t" + strings.Trim(tag.String(), "\x00"))
 		}
 	}
+	// Output:
 	// IFD0:
-	//	ImageWidth (uint32): 1728
-	//	ImageHeight (uint32): 2376
-	//	BitsPerSample (uint16): 1
-	//	Compression (uint16): 4
-	//	PhotometricInterpretation (uint16): 0
-	//	FillOrder (uint16): 2
-	//	StripOffsets (unknown): 8
-	//	Orientation (uint16): 1
-	//	SamplesPerPixel (uint16): 1
-	//	RowsPerStrip (uint32): 2376
-	//	StripByteCounts (unknown): 18112
-	//	PlanarConfiguration (uint16): 1
-	//	ResolutionUnit (uint16): 2
+	// 	ImageWidth (uint32): 1728
+	// 	ImageHeight (uint32): 2376
+	// 	BitsPerSample (uint16): 1
+	// 	Compression (uint16): 4
+	// 	PhotometricInterpretation (uint16): WhiteIsZero
+	// 	FillOrder (uint16): Reversed
+	// 	StripOffsets (unknown): 8
+	// 	Orientation (uint16): Horizontal (normal)
+	// 	SamplesPerPixel (uint16): 1
+	// 	RowsPerStrip (uint32): 2376
+	// 	StripByteCounts (unknown): 18112
+	// 	PlanarConfiguration (uint16): Chunky
+	// 	ResolutionUnit (uint16): inches
 }

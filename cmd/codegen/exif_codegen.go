@@ -81,10 +81,15 @@ var tags = map[uint16]tagdef{
 		default:
 			grp = exif.GroupNone
 		}
+		enums, strings := parseEnums(tag)
+
 		str := fmt.Sprintf("\t%0#4x: {Name: %q, Type: %d, flags: %x, arrayLen: [2]int{%d, %d}",
 			tag.ID, tag.Tagname, tp, flag, arraylen[0], arraylen[1])
 		fmt.Fprint(fp, str)
 		fmt.Fprintf(fp, ", ID: %0#4x", tag.ID)
+		if len(enums) != 0 && len(enums) == len(strings) {
+			fmt.Fprintf(fp, ", enum: %#v, enumString: %#v", enums, strings)
+		}
 		fp.WriteString("},\n")
 		_ = grp
 
@@ -95,6 +100,30 @@ var tags = map[uint16]tagdef{
 	fmt.Println(time.Now()) // so that generate runs.
 	// Output:
 	// None.
+}
+
+func parseEnums(tag TagPreproces) (vals []int64, res []string) {
+	for _, val := range tag.Values {
+		before, after, ok := strings.Cut(val, "=")
+		if !ok {
+			continue
+		}
+		before = strings.TrimSpace(before)
+		after = strings.TrimSpace(after)
+		var num int64
+		var err error
+		if strings.HasPrefix(before, "0x") {
+			num, err = strconv.ParseInt(before[2:], 16, 64)
+		} else {
+			num, err = strconv.ParseInt(before, 10, 64)
+		}
+		if err != nil {
+			continue
+		}
+		vals = append(vals, num)
+		res = append(res, after)
+	}
+	return vals, res
 }
 
 func parseType(s string) (tp exif.Type, flags uint8, arrayLen [2]int) {
