@@ -65,13 +65,14 @@ func TestFindStartOffset(t *testing.T) {
 			expected: 12,
 		},
 	}
+	var buf [256]byte
 	for _, tC := range testCases {
 		t.Run(tC.desc, func(t *testing.T) {
 			fp, err := os.Open(tC.desc)
 			if err != nil {
 				t.Fatal(err)
 			}
-			offset, err := FindStartOffset(fp)
+			offset, err := FindStartOffset(fp, buf[:])
 			if err != nil && tC.expected != -1 {
 				t.Fatal(err)
 			}

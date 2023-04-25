@@ -2,6 +2,7 @@ package exif_test
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -14,13 +15,24 @@ func ExampleLazyDecoder() {
 	if err != nil {
 		panic(err)
 	}
-	var decoder exif.LazyDecoder
-	err = decoder.Decode(fp)
+	// We find the EXIF metdata start.
+	// We can also choose to directly pass in the
+	// reader to the decoder though it may not work for all images.
+	offset, err := exif.FindStartOffset(fp, nil)
 	if err != nil {
 		panic(err)
 	}
-	ifds, err := decoder.MakeIFDs(fp, func(ifd, size int, id exif.ID) bool {
-		return size < 128 // Tags less than a kilobyte in size.
+	// Limit file reading with third argument to NewSectionReader
+	// If we don't want to limit the reader we can just pass in an arbitrarily large number.
+	rd := io.NewSectionReader(fp, offset, offset+9999999)
+
+	var decoder exif.LazyDecoder
+	err = decoder.Decode(rd)
+	if err != nil {
+		panic(err)
+	}
+	ifds, err := decoder.MakeIFDs(rd, func(ifd, size int, id exif.ID) bool {
+		return size < 128 // Only parse tags less than 128 bytes in size.
 	})
 	if err != nil {
 		panic(err)

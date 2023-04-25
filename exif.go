@@ -1,9 +1,11 @@
 package exif
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"strconv"
 
@@ -468,4 +470,63 @@ func stringTagInt(id ID, value int64) string {
 		}
 	}
 	return strconv.FormatInt(value, 10)
+}
+
+// FindStartOffset searches the given reader for the start of the EXIF metadata,
+// and a buffer to read the reader's contents into.
+// It returns the offset of the start of the metadata and any error encountered.
+//
+// The returned offset points to the first byte of the EXIF metadata in the file
+// which is the byte ordering.
+// The caller can use this offset to create a new reader that starts at the EXIF metadata
+// using [io.NewSectionReader].
+//
+// Note that this function assumes that the file format is compatible with the EXIF
+// standard and that the metadata start is indicated by the "Exif\x00\x00" pattern.
+// If the file does not contain EXIF metadata or uses a different format, this function
+// may return an error or an incorrect offset.
+//
+// If the argument buffer is nil one will be automatically allocated.
+func FindStartOffset(rd io.ReaderAt, buffer []byte) (startOffset int64, err error) {
+	const (
+		pattern    = "Exif\x00\x00"
+		patternLen = len(pattern)
+	)
+	// Attempt to perform feeling-lucky quick search.
+	var arr [32]byte
+	n, err := rd.ReadAt(arr[:], 0)
+	if err != nil {
+		return -1, err
+	}
+	idx := bytes.Index(arr[:n], []byte(pattern))
+	if idx >= 0 {
+		return int64(idx + patternLen), nil // Quick return case.
+	}
+
+	// Perform long search.
+	if buffer == nil {
+		buffer = make([]byte, 16*1024)
+	}
+	n = 0
+	for i := int64(0); ; i += int64(n - patternLen + 1) {
+		n, err = rd.ReadAt(buffer, i)
+		if n < 2*patternLen {
+			i -= 2 * int64(patternLen)
+			n, err = rd.ReadAt(buffer, i)
+			if n < 2*patternLen {
+				return -1, errors.New("extraordinary error: short buffer reads")
+			}
+		}
+		idx := bytes.Index(buffer[:n], []byte(pattern))
+		if idx >= 0 {
+			return i + int64(idx+patternLen), nil
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return -1, err
+		}
+	}
+	return -1, errors.New("did not find exif metadata start pattern")
 }
