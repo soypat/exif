@@ -28,10 +28,86 @@ type Tag struct {
 
 // String returns a human readable representation of the tag and its value.
 func (t Tag) String() string {
-	if v, err := t.Int(); err == nil {
-		return fmt.Sprintf("%s (%s): %v", t.ID.String(), t.ID.Type().String(), stringTagInt(t.ID, v))
+	desc, err := t.Describe()
+	if err != nil {
+		return fmt.Sprintf("!ERR %s: %v", t.ID.String(), err.Error())
 	}
-	return fmt.Sprintf("%s (%s): %v", t.ID.String(), t.ID.Type().String(), t.Value())
+	return fmt.Sprintf("%s (%s): %v", t.ID.String(), t.ID.Type().String(), desc)
+}
+
+// Describe returns a human-readable description of the value contained in the
+// EXIF tag. It converts the tag's numeric value to a more meaningful textual
+// representation based on the EXIF specification.
+//
+// In case of an issue with the tag's value or ID correspondence, Describe
+// returns an error detailing the problem.
+func (t Tag) Describe() (description string, err error) {
+	if t.data == nil {
+		return "", errors.New("nil tag value")
+	}
+	tagdef, ok := getTagdef(t.ID)
+	if !ok {
+		return "", errors.New("unknown tag ID")
+	}
+	tp := t.ID.Type()
+	if tp == 0 {
+		tp = tagdef.Type
+	}
+	switch {
+	case tp.IsFloat():
+		v, err := t.Float()
+		if err != nil {
+			return "", err
+		}
+		description = strconv.FormatFloat(v, 'g', 6, 64)
+
+	case tp.IsInt():
+		v, err := t.Int()
+		if err != nil {
+			return "", err
+		}
+		// Case where the ID represents an enum.
+		if len(tagdef.enum) > 0 {
+			v, err := toInt(t.data)
+			if err != nil {
+				return "", fmt.Errorf("%v <unexpected %T type>", t.data, t.data)
+			}
+			for i, enum := range tagdef.enum {
+				if enum == v {
+					return tagdef.enumString[i], nil
+				}
+			}
+			return "", fmt.Errorf("%d <unexpected value of Exif enum>", v)
+		}
+		// Just an integer.
+		description = strconv.FormatInt(v, 10)
+
+	case tp.IsRational():
+		v, err := t.Rational()
+		if err != nil {
+			return "", err
+		}
+		stringer := v.(fmt.Stringer)
+		description = stringer.String()
+
+	case tp.IsBytes():
+		v, err := t.Bytes()
+		if err != nil {
+			return "", err
+		}
+		if tp == TypeString {
+			description = string(v)
+		} else {
+			description = fmt.Sprintf("%q", v)
+		}
+	case tp == 0: // Unknown type.
+		// Some tags have this label. They are usually offset
+		description = fmt.Sprintf("%v", t.data)
+	default:
+		return "", fmt.Errorf("unknown Exif type code (%d)", uint16(tp))
+	}
+
+	return description, nil
 }
 
 // Value returns the value contained in the tag. An uninitialized tag will return nil.
@@ -298,6 +374,11 @@ func (tp Type) IsFloat() bool {
 // IsRational returns true if tp is of unsigned or signed rational type.
 func (tp Type) IsRational() bool {
 	return tp == TypeRational64 || tp == TypeURational64
+}
+
+// IsBytes returns true if tp is of string or undefined (blob/binary/byte) data type.
+func (tp Type) IsBytes() bool {
+	return tp == TypeString || tp == TypeUndefined
 }
 
 // Bytes returns the bytes contained in the tag value if the tag is of

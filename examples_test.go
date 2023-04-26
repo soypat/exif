@@ -68,15 +68,15 @@ func ExampleLazyDecoder() {
 	// 	ExposureTime (rational): 39636/1000000
 	// 	ExposureProgram (uint16): Aperture-priority AE
 	// 	ISO (uint16): 6
-	// 	ExifVersion (undefined): [48]
+	// 	ExifVersion (undefined): "0"
 	// 	DateTimeOriginal (string): 2023:01:04 14:18:34
 	// 	CreateDate (string): 2023:01:04 14:18:34
-	// 	ComponentsConfiguration (undefined): [1]
+	// 	ComponentsConfiguration (undefined): "\x01"
 	// 	ShutterSpeedValue (urational): 4657045/1000000
 	// 	BrightnessValue (urational): 0
 	// 	MeteringMode (uint16): Center-weighted average
 	// 	Flash (uint16): 0
-	// 	FlashpixVersion (undefined): [48]
+	// 	FlashpixVersion (undefined): "0"
 	// 	ColorSpace (uint16): sRGB
 	// 	ExifImageWidth (uint16): 2048
 	// 	ExifImageHeight (uint16): 1536
